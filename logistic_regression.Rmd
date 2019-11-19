@@ -1,0 +1,175 @@
+---
+title: "logistic regression"
+author: "Anna Yeaton"
+date: "10/8/2018"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, include=FALSE}
+library(caret)
+library(pROC)
+library(MASS)
+library(ggplot2)
+library(gridExtra)
+#library(devtools)
+library(dplyr)
+library(ggfortify)
+library(glmnet)
+# what even
+library(e1071)
+```
+
+## Linear Regression 
+
+$Y_i=B_0 + B_1X_{i1}$
+
+Where $Y_i$ is the dependent variable, and $X_i$ is the independent variable. $B_{number}$ are the parameters to fit. 
+
+Linear Regression assumes a linear relationship between $X$ and $Y$ .
+
+## Logistic Regression
+
+$logodds_i=B_0 + B_1X_{i1}$
+
+Here, the log odds represents the log odds of $Y_i$ being 0 or 1. 
+
+Where $logodds$ is the dependent variable, and $X_i$ is the independent variable. $B_{number}$ are the parameters to fit. 
+
+Logistic Regression assumes a linear relationship between the $logodds$ and $X$.
+
+To convert from logodds, a not intuitive quantity, to odds, a more intuitive quantity, we use this non-linear equation: 
+
+$odds_i=e^{logodds_{i}}$
+or 
+$odds_i=e^{B_0 + B_1X_{i1}}$
+
+Odds is defined as the probability that the event will occur divided by the probability that the event will not occur.
+
+Now we convert from odds to probability.
+
+The probability that an event will occur is the fraction of times you expect to see that event in many trials. Probabilities always range between 0 and 1.
+
+To convert from odds to a probability, divide the odds by one plus the odds. So to convert odds of 1/9 to a probability, divide 1/9 by 10/9 to obtain the probability of 0.10
+
+$P=odds/(odds+1)$
+
+
+## Logistic Regression implementation
+
+* Y=1 is the probability of the event occuring.
+* Independent variables should not be correlated.
+* Log odds and independent variables should be linearly correlated.
+
+2. Train and fit model 
+```{r}
+data(iris)
+
+#split into training and test set 
+train_size <- floor(0.75 * nrow(iris))
+set.seed(543)
+train_pos <- sample(seq_len(nrow(iris)), size = train_size)
+train_classifier <- iris[train_pos,]
+test_classifier <- iris[-train_pos,]
+
+
+dim(train_classifier)
+dim(test_classifier)
+#only look at two classes 
+train_classifier_log <- train_classifier[c(which(train_classifier$Species == "setosa"),
+                                           which(train_classifier$Species == "versicolor")),]
+test_classifier_log <- test_classifier[c(which(test_classifier$Species == "setosa"), 
+                                         which(test_classifier$Species == "versicolor")),]
+
+train_classifier_log$Species <- factor(train_classifier_log$Species)
+test_classifier_log$Species <- factor(test_classifier_log$Species)
+
+ctrl <- trainControl(method = "repeatedcv", repeats = 15,classProbs = T,
+                     savePredictions = T)
+
+#create model. logistic regression is a bionomial general linear model. 
+#predict species based on sepal length
+logistic_regression <- train(Species~ Sepal.Length, data = train_classifier_log, 
+                             method = "glm", family= "binomial", trControl = ctrl)
+```
+
+
+```{r}
+logistic_regression
+```
+
+
+```{r}
+summary(logistic_regression)
+```
+
+3. Visualize ROC curve 
+```{r}
+plot(x = roc(predictor = logistic_regression$pred$setosa,
+             response = logistic_regression$pred$obs)$specificities, 
+     y = roc(predictor = logistic_regression$pred$setosa, 
+             response = logistic_regression$pred$obs)$sensitivities,
+     col= "blue", xlim = c(1, 0), type ="l", ylab = "Sensitivity",
+     xlab = "Specificity")
+legend("bottomright", legend = paste("setosa v versicolor --", 
+                                     roc(predictor = logistic_regression$pred$setosa,
+                                         response = logistic_regression$pred$obs)$auc
+, sep = ""), col = c("blue"), fill = c("blue"))
+```
+
+
+4. Test on an independent set
+```{r}
+#predict iris species using Sepal legth
+logistic_regression_predict_class <- predict(logistic_regression, 
+                                             newdata = test_classifier_log)
+
+#confusion matrix
+confusionMatrix(logistic_regression_predict_class, 
+                reference = test_classifier_log$Species)
+```
+
+Check if log odds and independent variables are linearly correlated
+```{r}
+logistic_regression_predict <- predict(logistic_regression, 
+                                       newdata = test_classifier_log, type = "prob")
+
+# To convert from a probability to odds, divide the probability by one minus that probability. So if the probability is 10% or 0.10 , then the odds are 0.1/0.9 or ‘1 to 9’ 
+
+odds_species1 <- logistic_regression_predict[,1] / (1 - logistic_regression_predict[,1])
+log_odds_species1 <- log(odds_species1)
+cor.test(log_odds_species1, test_classifier_log$Sepal.Length)
+plot(log_odds_species1, test_classifier_log$Sepal.Length)
+```
+
+Look deeper at the logistic regression 
+```{r}
+logistic_predict_prob <- predict(logistic_regression,
+                                 newdata = test_classifier_log, type="prob")
+
+logistic_pred_prob_plot <- data.frame(Species_pred = logistic_predict_prob, Sepal.Length  = test_classifier_log$Sepal.Length) 
+
+test_classifier_log$Species <- as.numeric(test_classifier_log$Species) -1
+
+ggplot(data = test_classifier_log) +
+  geom_point(aes(x=Sepal.Length, y = Species)) + 
+  geom_line(data = logistic_pred_prob_plot, aes(x = Sepal.Length, 
+                                                y = Species_pred.setosa, col =  "setosa"))+
+  geom_line(data = logistic_pred_prob_plot, aes(x = Sepal.Length,
+                                                y = Species_pred.versicolor, col = "versicolor"))+
+  ggtitle("Probabilities for classifying species")
+
+```
+
+
+
+
+
+
+

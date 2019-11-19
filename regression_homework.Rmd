@@ -1,0 +1,167 @@
+---
+title: "Regression"
+author: "Anna Yeaton"
+date: "Fall 2019"
+output:
+  html_document:
+    df_print: paged
+fontsize: 11pt
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = T)
+```
+
+# Lab Section
+
+In this lab, we will go over regression. We will be using the caret package in R. https://topepo.github.io/caret/train-models-by-tag.html
+
+# Perfomance Metrics 
+
+## Residual 
+
+Deviation of the observed value to the estimated value (sample mean)
+$$residual=y_i - \hat{y_i}$$
+where $\hat{y_i}$ is the estimated value
+
+## Mean Squared Error (MSE)
+
+$$MSE=\frac{1}{n}\sum_{i=1}^{n}(y_i - \hat{y_i})^2$$
+
+## Root Mean Squared Error (RMSE)
+Same units as original data.
+
+$$RMSE=\sqrt{MSE}$$
+
+## L2 regularization : Ridge regression. Regularize by adding the sum of the coefficients, squared, to the function. 
+
+$$Ridge Regression=\sum_{i=1}^{n}(y_i - w_0 - \sum_{j=1}^{p}w_jx_{ij})^2 + \lambda\sum_{j=1}^p(w_j)^2$$
+
+## L1 regularization : Lasso Regression. Regularize by adding the sum of the absolute value of the coefficients to the model. Coefficient estimates may be pushed to zero -- Lasso can perform variable selection
+
+$$Lasso Regression=\sum_{i=1}^{n}(y_i - w_0 - \sum_{j=1}^{p}w_jx_{ij})^2 + \lambda\sum_{j=1}^p|w_j|$$
+
+
+\newpage
+
+### The broad steps of Machine learning in R. 
+
+1. Split the data into training and test. Set test aside. 
+
+2. Fit a good model to the training data. 
+
+3. See how your model did on the training data.
+
+4. Test how your model performs on the test data. 
+
+# Regression
+
+```{r, include=FALSE}
+library(caret)
+library(MASS)
+library(ggplot2)
+library(dplyr)
+library(ggfortify)
+
+
+#Mauna Loa CO2 concentrations
+data(airquality)
+```
+
+
+1. Split data into training and test set (75% in train set, 25% in test set)
+
+```{r}
+#train_regression = 
+#test_regression = 
+```
+
+
+### Linear Regression
+
+* Assumes a linear relationship. 
+* Independent variables should not be correlated (no mulitcollinearity)
+* The number of observations should be greater than the number of independent variables.
+
+
+$$RSS=\sum(y_i - \hat{y_i})^2$$
+We will predict the response of the Temperature based on Wind. 
+
+This is the data we will fit a linear model to. 
+```{r}
+# ggplot(data = train_regression) +
+#   geom_point(aes(x=Wind, y=Temp)) +
+#   theme_bw()
+```
+
+2. Create and fit a linear model to predict Temperature from Wind using the training set
+
+```{r}
+#help(train)
+
+#linear_regression <- train( ~ , data= , method = "lm")
+```
+
+
+3. Vizualize how your model performed on the train data by plotting the regression line on top of the train data points. 
+```{r}
+
+```
+
+
+4. Explore how the model performs on the test data. For Linear Regression:
+
+* The residuals should be close to zero.
+* There should be equal variance around the regression line (homoscedasticity).
+* Residuals should be normally distributed.
+* Independent variables and residuals should not be correlated.
+
+4 a) See how the model performs on the test data
+```{r}
+#help(predict)
+#linear_predict <- predict(, newdata=)
+```
+
+4 b) Look at the residuals. Are they close to zero?
+```{r}
+#look at the median residual value. Close to zero is best
+#help(summary)
+```
+
+
+4 c) Plot predicted temperature vs observed temperature. A strong model should show a strong correlation
+```{r}
+
+```
+
+4 d) Visualize the predicted values in relation to the read data points. Look for homoscedasticity
+```{r}
+# Extract coefficients from the model
+
+# plot the regression line on the predicted values
+
+# plot the original test values
+
+```
+
+4 e) Residuals should be normally distributed. Plot the density of the residuals
+```{r}
+#residuals_lin <- residuals(linear_regression)
+
+#ggplot(data=residvpredict) +
+#  geom_density(aes(residual))
+```
+
+
+4 f) Independent variables and residuals should not be correlated
+```{r}
+#cor.test(train_regression$Wind, resid(linear_regression))
+```
+
+
+### Linear Regression with Regularization
+
+5. Create a linear model using L1 or L2 regularization to predict Temperature from Wind and Month variables.  
+
+
+

@@ -1,0 +1,636 @@
+---
+title: "Unsupervised learning - clustering and dimension reduction"
+author: "Anna Yeaton"
+date: "Fall 2019"
+output:
+  html_document:
+    df_print: paged
+fontsize: 11pt
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = T)
+```
+
+# Lab Section
+Download auto data from the *Statistical Learning* book website here: http://www-bcf.usc.edu/~gareth/ISL/data.html
+
+Today, we are going over Hierarchical clustering, K-Means Clustering, PCA, and ICA. 
+
+```{r load, include=FALSE}
+library(ggplot2)
+library(tidyverse)
+library(ggfortify)
+library(fastICA)
+```
+
+```{r}
+# read in Auto data
+Auto_data <- read_csv("/Users/ay1392/Desktop/Auto.csv")
+
+#remove cars with unknown horsepower and set horsepower to numeric
+Auto_data <- Auto_data %>% 
+  filter(horsepower != "?") %>% 
+  mutate(horsepower = as.numeric(horsepower)) %>% 
+  as.data.frame()
+
+#save car names 
+Auto_data_names <- Auto_data$name
+
+#data to cluster
+Auto_data_clust <- Auto_data[,1:8]
+dim(Auto_data_clust)
+
+#392 is too much for a demo, so lets take the first 25
+Auto_data_clust <- Auto_data_clust[1:25,]
+rownames(Auto_data_clust) <- Auto_data_names[1:25]
+```
+
+
+## Hierarchical agglomerative clustering
+
+Step 1. Assign each item to it's own cluster. We start with 25 clusters, one for each car. 
+
+Step 2. Calculate a proximity matrix between each cluster.
+
+Step 3. Find the pair of clusters closest to each other. 
+
+Step 4. Merge these clusters and then recalculate similarity between clusters. Some options are: single linkage (distance is calculated from the nearest neighbors), complete linkage (distance is calculated from furthest neighbor), average linkage (distance is calculated from mean of different clusters). 
+
+Step 5. Repeat Step 3 and 4 until there is only one cluster.
+
+### In practice
+
+Step 1. Each car is a cluster. 
+
+Step 2. Create a distance matrix from Auto_data_clust.
+
+```{r}
+help("dist")
+hierarchical_dist <- as.matrix(dist(Auto_data_clust, method = "euclidean"))
+#View(hierarchical_dist)
+```
+
+Step 3. Find the two cars that are the most similar to each other and print the names of those two cars
+
+```{r }
+diag(hierarchical_dist) <- NA
+arrayInd(which.min(hierarchical_dist), dim(hierarchical_dist))
+
+#postitions 23 and 15 are the most similar. Lets go back to the names of the cars
+Auto_data_names[23]
+Auto_data_names[15]
+
+```
+
+Step 4. Merge the two clusters together using average linkage. 
+
+```{r }
+#replace pos 15 with the average of pos 15 and 23
+hierarchical_dist[,15] <- apply((hierarchical_dist[,c(23,15)]),1,mean)
+hierarchical_dist[15,] <- apply((hierarchical_dist[c(23,15),]),2,mean)
+
+#remove pos 23
+hierarchical_dist <- hierarchical_dist[-23,-23]
+
+#now position 15 represents the cluster containing the saab99e and the toyota corona mark ii
+```
+
+Step 5. To complete the algorithm, go back to step 3 and iterate through all of the previous steps until there are no more rows left
+
+```{r }
+diag(hierarchical_dist) <- NA
+arrayInd(which.min(hierarchical_dist), dim(hierarchical_dist))
+
+#postitions 4 and 3 are the most similar
+Auto_data_names[4]
+Auto_data_names[3]
+
+```
+
+### R function 
+
+Now that we know how the algorithm works, let's use the R function hclust. Plot the Dendogram resulting from clustering the Auto_data_clust using average linkage.  
+
+```{r}
+hierarchical_dist <- dist(Auto_data_clust, method = "euclidean")
+tree <- hclust(hierarchical_dist, method="average")
+plot(tree)
+```
+
+There is one more element to hierarchical clustering: Cutting the tree. Here, we can control how many clusters we want or the height of the tree. 
+```{r}
+#help(cutree)
+
+# cut tree into 3 clusters
+tree <- hclust(hierarchical_dist, method="average")
+plot(tree)
+tree_k2 <- cutree(tree, k = 2)
+# plot the tree before running this line 
+rect.hclust(tree, k = 3, h = NULL)
+```
+
+
+\newpage
+
+## Principal Components Analysis (PCA)
+
+Principal Components Analysis is a linear dimensionality reduction algorithm. If you want to learn more about linear algebra, I suggest the MIT Open Courseware class here : https://ocw.mit.edu/courses/mathematics/18-06-linear-algebra-spring-2010/
+There are two ways of doing PCA, Single Value Decomposition (SVD), and the method we will use today, using the covariance matrix of the data. 
+
+Step 1. Center data by subtracting the mean.
+
+Step 2. Calculate covariance matrix of data.
+
+Step 3. Perform Eigendecomposition of the covariance matrix. i.e. represent the matrix in terms of it's eigenvalues and eigen vectors
+
+Step 4. Multiply the eigen vectors by the original data to express the data in terms of the eigen vectors. 
+
+Step 1. Center the data by subtracting the mean of the each column from the values in that column
+
+```{r}
+Auto_data_clust_pca <- data.matrix(Auto_data_clust)
+
+Center_auto <- apply(Auto_data_clust_pca, 2, function(x) x - mean(x))
+```
+
+
+Step 2. Calculate covariance matrix of the Auto data
+
+```{r}
+Covariance_auto <- cov(Center_auto)
+```
+
+Step 3.  Calculate eigen values and vectors
+
+```{r}
+Eigen_value_auto <- eigen(Covariance_auto)$value
+
+#columns are the eigen vectors
+Eigen_vector_auto <- eigen(Covariance_auto)$vector
+```
+
+Step 4. Multiply the eigen vector matrix by the original data. 
+
+```{r}
+PC <- as.data.frame(data.matrix(Center_auto) %*% Eigen_vector_auto)
+
+ggplot(PC, aes(PC[,1], PC[,2])) + geom_point(aes(PC[,1], PC[,2]))
+#+ geom_text(aes(label=Auto_data_names[1:8]), nudge_x = -2.5, nudge_y = 400)
+```
+
+Step 5. Find out which principal components explain the variance in the data. 
+
+```{r}
+#for each component, take the cumulative sum of eigen values up to that point and and divide by the total sum of eigen values
+round(cumsum(Eigen_value_auto)/sum(Eigen_value_auto) * 100, digits = 2)
+```
+
+Principal component 1 and 2 explain 99.99 percent of the variance. Principal component 1,2, and 3 together explain 100% of the variance in the data. 
+
+### R function 
+Now that we know how PCA works, lets use the R funtion prcomp.
+
+```{r}
+help("prcomp")
+autoplot(prcomp(Auto_data_clust_pca))
+```
+
+\newpage
+
+## Independent Component Analysis (ICA)
+ICA is an algorithm that finds components that are independent, subcomponents of the data. 
+
+Step 1. Whiten the data by projecting the data onto the eigen vectors (PCA).
+
+Step 2. Solve the X=AS equation by maximizing non-gaussianty in the variables(components) in S. 
+
+This results in a matrix S with components that are independent from each other. 
+
+We will use the fastICA algorithm.
+
+First we will go backwards. 
+Create a matrix S with the independent components
+```{r}
+#create two signals
+S <- cbind(cos((1:500)/10), ((500:1)/1000))
+
+par(mfcol = c(1, 2))
+plot(S[,1], type="l")
+plot(S[,2], type="l")
+```
+
+Create a mixing matrix A
+```{r}
+A <- matrix(c(0.5, 0.9, 0.423, 0.857), 2, 2)
+```
+
+Mix S using A
+```{r}
+X <- S %*% A
+par(mfcol = c(1, 2))
+plot(X[,1], type="l")
+plot(X[,2], type="l")
+
+```
+
+
+Unmix using fastICA
+```{r, include=FALSE}
+a <- fastICA(X, 2, alg.typ = "parallel", fun = "logcosh", alpha = 1,
+             method = "R", row.norm = FALSE, maxit = 200,
+             tol = 0.0001, verbose = TRUE)
+```
+
+
+```{r}
+par(mfcol = c(1, 2))
+plot(1:500, a$S[,1], type = "l", xlab = "S'1", ylab = "")
+plot(1:500, a$S[,2], type = "l", xlab = "S'2", ylab = "")
+```
+
+
+### ICA on the auto data
+
+```{r, include=FALSE}
+a <- fastICA(Auto_data_clust, 7, alg.typ = "parallel", fun = "logcosh", alpha = 1,
+             method = "R", row.norm = FALSE, maxit = 200,
+             tol = 0.0001, verbose = TRUE)
+```
+
+plot the independent components as a heatmap
+```{r}
+heatmap(a$S)
+```
+
+
+\newpage
+
+## Homework
+
+```{r}
+data(iris)
+```
+
+0. Subset the Iris dataset to only include `Sepal.Length`, `Sepal.Width`, `Petal.Length`, and `Petal.Width`. 
+
+```{r}
+data <- iris %>% 
+  select(c(Sepal.Length, Sepal.Width, Petal.Length, Petal.Width))
+
+flower_names <- iris %>% 
+  as_tibble() %>% 
+  select(Species) 
+```
+
+
+1. Write out the Kmeans algorithm by hand, and run two iterations of it. 
+
+## K-Means Clustering
+Step 1. Choose the K number of clusters.
+
+Step 2. Split the data randomly into K groups.  
+
+Step 3. Iterate until the cluster assignments stop changing:
+
+  a) For each of the K clusters, compute the cluster centroid. The kth cluster centroid is the vector of the p feature means for the observations in the kth cluster. 
+  b) Assign each observation to the cluster whose centroid is the closest. 
+
+```{r Step1}
+K = 2
+```
+
+```{r Step2}
+set.seed(10)
+# Randomly assign a number, from 1 to K, to each of the observations. 
+idx <- sample(c(TRUE, FALSE), nrow(data), replace=TRUE, prob=c(0.5, 0.5))
+
+K1_data <- data[idx, ]
+K1_names <- flower_names[idx,]
+  
+K2_data <- data[!idx, ]
+K2_names <- flower_names[!idx,]
+```
+
+
+```{r Step2_viz}
+pcs<- as.data.frame(prcomp(data)$x)
+pcs$Cluster1 <- idx
+
+(current_clust <- ggplot(pcs, aes(PC1, PC2, color = Cluster1)) + 
+  geom_point() + 
+    theme_bw()  +
+    ggsci::scale_color_aaas())
+
+```
+
+
+```{r Step3a1}
+# create a list to keep track of the data and calculate centroid
+K1 <- list(observations = K1_data,
+           names = K1_names,
+           centroid = colMeans(K1_data))
+
+K2 <- list(observations = K2_data,
+           names = K2_names,
+           centroid = colMeans(K2_data))
+```
+
+```{r Step3b1}
+# Assign each observation to the cluster whose centroid is the closest. 
+
+# lets define a clean distance function so we know what is going on
+sq_euclidean_dist <- function(x1, x2) {
+  sum((x1 - x2) ^ 2)
+}
+
+# now calculate the squared euclidean distance between each observation adn the cluster centroid
+dist_K1 <- apply(data, 1, function(x){ sq_euclidean_dist(x, K1$centroid) })
+dist_K2 <- apply(data, 1, function(x){ sq_euclidean_dist(x, K2$centroid) })
+dist_clust <- cbind(dist_K1, dist_K2)
+
+# assign each observation to the closest cluster
+idx <- apply(dist_clust, 1, function(x){ which.min(x) == 1})
+
+K1_data <- data[idx, ]
+K1_names <- flower_names[idx,]
+  
+K2_data <- data[!idx, ]
+K2_names <- flower_names[!idx,]
+```
+
+```{r Step3a2}
+# create a list to keep track of the data and calculate centroid
+K1 <- list(observations = K1_data,
+           names = K1_names,
+           centroid = colMeans(K1_data))
+
+K2 <- list(observations = K2_data,
+           names = K2_names,
+           centroid = colMeans(K2_data))
+```
+
+```{r Step3a2_viz}
+pcs<- as.data.frame(prcomp(data)$x)
+pcs$Cluster1 <- idx
+
+(current_clust <- ggplot(pcs, aes(PC1, PC2, color = Cluster1)) + 
+  geom_point() + 
+    theme_bw())
+
+```
+
+
+```{r Step3b2}
+
+# now calculate the squared euclidean distance between each observation adn the cluster centroid
+dist_K1 <- apply(data, 1, function(x){ sq_euclidean_dist(x, K1$centroid) })
+dist_K2 <- apply(data, 1, function(x){ sq_euclidean_dist(x, K2$centroid) })
+dist_clust <- cbind(dist_K1, dist_K2)
+
+# assign each observation to the closest cluster
+idx <- apply(dist_clust, 1, function(x){ which.min(x) == 1})
+
+K1_data <- data[idx, ]
+K1_names <- flower_names[idx,]
+  
+K2_data <- data[!idx, ]
+K2_names <- flower_names[!idx,]
+```
+
+```{r Step3a3}
+# create a list to keep track of the data and calculate centroid
+K1 <- list(observations = K1_data,
+           names = K1_names,
+           centroid = colMeans(K1_data))
+
+K2 <- list(observations = K2_data,
+           names = K2_names,
+           centroid = colMeans(K2_data))
+```
+
+```{r Step3a3_viz}
+pcs<- as.data.frame(prcomp(data)$x)
+pcs$Cluster1 <- idx
+
+(current_clust <- ggplot(pcs, aes(PC1, PC2, color = Cluster1)) + 
+  geom_point() + 
+    theme_bw())
+
+```
+
+2. Run PCA on the Iris dataset. Plot a scatter plot of PC1 vs PC2 and include the percent variance those PCs describe. 
+
+```{r}
+autoplot(prcomp(data)) 
+```
+
+3. Run ICA on the Iris dataset. Plot the independent components as a heatmap.
+
+```{r}
+a <- fastICA(data, 3, alg.typ = "parallel", fun = "logcosh", alpha = 1,
+             method = "R", row.norm = FALSE, maxit = 200,
+             tol = 0.0001, verbose = FALSE)
+```
+
+plot the independent components as a heatmap
+```{r}
+heatmap(a$S)
+```
+
+
+4. Use Kmeans to cluster the Iris data. 
+  * Use the silhouette function in the cluster package to find the optimal number of clusters for kmeans for the iris dataset. Then cluster using kmeans clustering. Does the data cluster by species? 
+  * Using this clustering, color the PCA plot according to the clusters.
+  
+  
+```{r}
+plot(cluster::silhouette(kmeans(as.matrix(data), 3)$cluster, dist = dist(data)))
+
+
+library(factoextra)
+fviz_nbclust(as.matrix(data), kmeans, method = "silhouette")
+```
+  
+### Two optimal clusters 
+  
+```{r}
+kmeans_2 <- kmeans(as.matrix(data),2)
+```
+
+```{r}
+ggplot(prcomp(data)$x, aes(PC1, PC2, color = flower_names$Species)) +
+  geom_point() +
+  theme_bw() +
+  ggsci::scale_color_jama(name = "Species") +
+  ggtitle("Species")
+```
+  
+  
+  
+```{r}
+pc_data <- prcomp(data)$x
+
+ggplot(pc_data, aes(PC1, PC2, color = as.character(kmeans_2$cluster))) +
+  geom_point() +
+  theme_bw() +
+  ggsci::scale_color_jco(name = "clusters K=2") +
+  ggtitle("Clusters K = 2")
+```
+  
+  
+5. Use hierarchical clustering to cluster the Iris data.
+
+  * Try two different linkage types, and two different distance metrics.
+  * For one linkage type and one distance metric, try two different cut points.
+  * Using this clustering, color the PCA plot according to the clusters. (6  plots in total)
+  
+  
+  
+Linkage: Average
+
+Distance: Euclidean
+
+Cut: h = 4
+```{r}
+tree_hw <- hclust(dist(data), method = "average")
+plot(tree_hw)
+tree_hw_cut <- cutree(tree_hw, k = NULL, h = 4)
+rect.hclust(tree_hw, k = NULL, h = 4)
+```
+
+```{r}
+ggplot(pc_data, aes(PC1, PC2, color = as.character(tree_hw_cut))) +
+  geom_point() +
+  theme_bw() +
+  ggsci::scale_color_jco(name = "Linkage: Average
+Distance: Euclidean
+Cut: h = 4") 
+```
+
+
+Linkage: Average
+
+Distance: Euclidean
+
+Cut: k = 5
+```{r}
+tree_hw <- hclust(dist(data), method = "average")
+plot(tree_hw)
+tree_hw_cut <- cutree(tree_hw, k = 5, h = NULL)
+rect.hclust(tree_hw, k = 5, h = NULL)
+```
+
+```{r}
+ggplot(pc_data, aes(PC1, PC2, color = as.character(tree_hw_cut))) +
+  geom_point() +
+  theme_bw() +
+  ggsci::scale_color_jco(name = "Linkage: Average
+Distance: Euclidean
+Cut: k = 5") 
+```
+
+Linkage: Complete
+
+Distance: Euclidean
+
+Cut: k = 4
+```{r}
+tree_hw <- hclust(dist(data), method = "complete")
+plot(tree_hw)
+tree_hw_cut <- cutree(tree_hw, h = NULL, k = 4)
+rect.hclust(tree_hw, h = NULL, k = 4)
+```
+
+```{r}
+ggplot(pc_data, aes(PC1, PC2, color = as.character(tree_hw_cut))) +
+  geom_point() +
+  theme_bw() +
+  ggsci::scale_color_jco(name = "Linkage: Complete
+Distance: Euclidean
+Cut: k = 4") 
+```
+
+
+
+Linkage: Single
+
+Distance: Euclidean
+
+Cut: k = 4
+```{r}
+tree_hw <- hclust(dist(data), method = "single")
+plot(tree_hw)
+tree_hw_cut <- cutree(tree_hw, h = NULL, k = 4)
+rect.hclust(tree_hw, h = NULL, k = 4)
+```
+
+```{r}
+ggplot(pc_data, aes(PC1, PC2, color = as.character(tree_hw_cut))) +
+  geom_point() +
+  theme_bw() +
+  ggsci::scale_color_jco(name = "Linkage: Single
+Distance: Euclidean
+Cut: k = 4") 
+```
+
+
+
+Linkage: Single
+
+Distance: Manhattan
+
+Cut: k = 4
+```{r}
+tree_hw <- hclust(dist(data, method = "manhattan"), method = "single")
+plot(tree_hw)
+tree_hw_cut <- cutree(tree_hw, h = NULL, k = 4)
+rect.hclust(tree_hw, h = NULL, k = 4)
+```
+
+```{r}
+ggplot(pc_data, aes(PC1, PC2, color = as.character(tree_hw_cut))) +
+  geom_point() +
+  theme_bw() +
+  ggsci::scale_color_jco(name = "Linkage: Single
+Distance: Manhattan
+Cut: k = 4") 
+```
+
+
+Linkage: Single
+
+Distance: Canberra
+
+Cut: k = 4
+```{r}
+tree_hw <- hclust(dist(data, method = "canberra"), method = "single")
+plot(tree_hw)
+tree_hw_cut <- cutree(tree_hw, h = NULL, k = 4)
+rect.hclust(tree_hw, h = NULL, k = 4)
+```
+
+```{r}
+ggplot(pc_data, aes(PC1, PC2, color = as.character(tree_hw_cut))) +
+  geom_point() +
+  theme_bw() +
+  ggsci::scale_color_jco(name = "Linkage: Single
+Distance: Canberra
+Cut: k = 4") 
+```
+
+# Optional material
+On PCA:
+
+Eigen Vectors and Eigen Values http://www.visiondummy.com/2014/03/eigenvalues-eigenvectors/
+Linear Algebra by Prof. Gilbert Strang https://ocw.mit.edu/courses/mathematics/18-06-linear-algebra-spring-2010/video-lectures/
+http://www.cs.otago.ac.nz/cosc453/student_tutorials/principal_components.pdf
+https://stats.stackexchange.com/questions/2691/making-sense-of-principal-component-analysis-eigenvectors-eigenvalues
+
+On ICA: 
+
+Independent Component Analysis: Algorithms and Applications https://www.cs.helsinki.fi/u/ahyvarin/papers/NN00new.pdf
+Tutorial on ICA taken from http://rstudio-pubs-static.s3.amazonaws.com/93614_be30df613b2a4707b3e5a1a62f631d19.html
+
+
+
